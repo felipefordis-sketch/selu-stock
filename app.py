@@ -354,13 +354,21 @@ def run_analysis(df_min, df_vta, p):
     df["delta"] = df["minimo_optimo"] - df["minimo_actual"]
 
     # --- Dias para vender excedente (sin devolver, esperar a que se venda) ---
+    # Usar VPD historico completo (mas representativo que ultimos N meses)
+    fecha_min = df_vta["periodo"].min()
+    dias_historico = max((fecha_max - fecha_min).days, 30)
+    agg_vpd_hist = df_vta.groupby("sku").agg(uds_hist=("cantidad", "sum")).reset_index()
+    agg_vpd_hist["vpd_hist"] = agg_vpd_hist["uds_hist"] / dias_historico
+    df = df.merge(agg_vpd_hist[["sku", "vpd_hist"]], on="sku", how="left")
+    df["vpd_hist"] = df["vpd_hist"].fillna(0)
+
     def dias_vender_excedente(row):
         excedente = row["stock_actual"] - row["minimo_optimo"]
         if excedente <= 0:
             return 0
-        if row["vpd"] <= 0:
+        if row["vpd_hist"] <= 0:
             return 9999  # no se vende
-        return round(excedente / row["vpd"])
+        return round(excedente / row["vpd_hist"])
 
     df["dias_vender_excedente"] = df.apply(dias_vender_excedente, axis=1)
 

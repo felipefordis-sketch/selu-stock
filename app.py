@@ -372,6 +372,21 @@ def run_analysis(df_min, df_vta, p):
 
     df["dias_vender_excedente"] = df.apply(dias_vender_excedente, axis=1)
 
+    # --- Venta proyectada hasta diciembre (sin devolver nada) ---
+    from datetime import date
+    dias_a_dic = max((date(date.today().year, 12, 31) - date.today()).days, 1)
+    df["venta_proy_dic"] = (df["vpd_hist"] * dias_a_dic).apply(math.floor).astype(int)
+
+    # % del excedente que se venderia hasta diciembre
+    def pct_excedente_dic(row):
+        excedente = row["stock_actual"] - row["minimo_optimo"]
+        if excedente <= 0:
+            return 100
+        if row["venta_proy_dic"] <= 0:
+            return 0
+        return min(round(row["venta_proy_dic"] / excedente * 100), 100)
+    df["pct_venta_dic"] = df.apply(pct_excedente_dic, axis=1)
+
     # --- Estado ---
     def clasificar(row):
         if row["vpd"] == 0:
@@ -569,9 +584,11 @@ def render_classification(r):
 
     show_cols = ["local", "articulo", "color_desc", "talle", "abc", "minimo_actual",
                  "stock_actual", "estado", "minimo_optimo", "delta", "dias_vender_excedente",
+                 "venta_proy_dic", "pct_venta_dic",
                  "vendio_reciente", "estacionalidad", "uds_total", "accion"]
     show_names = ["Local", "Articulo", "Color", "Talle", "ABC", "Min Actual",
-                  "Stock", "Estado", "Min Optimo", "Delta", "Dias Vender Excedente",
+                  "Stock", "Estado", "Min Optimo", "Delta", "Dias Vender Exc",
+                  "Venta Proy Dic", "% Exc a Dic",
                   "Venta Reciente", "Estacionalidad", "Uds Vendidas", "Accion"]
 
     df_show = df.loc[mask, show_cols].copy()
@@ -670,10 +687,12 @@ def render_actionable(r):
     df_show = df_acc.loc[mask, ["local", "articulo", "color_desc", "talle", "abc",
                                  "minimo_actual", "stock_actual", "estado",
                                  "minimo_optimo", "delta", "dias_vender_excedente",
+                                 "venta_proy_dic", "pct_venta_dic",
                                  "vendio_reciente", "accion"]].copy()
     df_show.columns = ["Local", "Articulo", "Color", "Talle", "ABC",
                         "Min Actual", "Stock", "Estado", "Min Optimo", "Delta",
-                        "Dias Vender Excedente", "Venta Reciente", "Accion"]
+                        "Dias Vender Exc", "Venta Proy Dic", "% Exc a Dic",
+                        "Venta Reciente", "Accion"]
     df_show = df_show.sort_values("Delta")
 
     c1, c2, c3 = st.columns(3)
@@ -690,11 +709,13 @@ def render_download(r):
 
     det_cols = ["local", "articulo", "color_desc", "talle", "sku", "abc",
                 "minimo_actual", "stock_actual", "estado", "minimo_optimo", "delta",
-                "dias_vender_excedente", "vendio_reciente", "estacionalidad", "meses_pico",
+                "dias_vender_excedente", "venta_proy_dic", "pct_venta_dic",
+                "vendio_reciente", "estacionalidad", "meses_pico",
                 "meses_venta", "uds_total", "facturacion", "accion"]
     det_names = ["Local", "Articulo", "Color", "Talle", "SKU", "ABC",
                  "Min Actual", "Stock Actual", "Estado", "Min Optimo", "Delta",
-                 "Dias Vender Excedente", "Vendio Reciente", "Estacionalidad", "Meses Pico",
+                 "Dias Vender Exc", "Venta Proy Dic", "% Exc a Dic",
+                 "Vendio Reciente", "Estacionalidad", "Meses Pico",
                  "Meses con Venta", "Uds Vendidas", "Facturacion", "Accion"]
 
     df_det = df[det_cols].copy()

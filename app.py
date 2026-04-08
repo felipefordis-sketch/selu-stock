@@ -242,13 +242,56 @@ def load_ventas(file_bytes):
         tmp = pd.read_excel(xls, sheet_name=sheet, dtype=str)
         if len(tmp.columns) < 4:
             continue
-        # Verificar que parece datos de ventas (tiene "Mes" en alguna celda de fecha)
         cols = list(tmp.columns)
-        tmp = tmp.rename(columns={
-            cols[0]: "articulo", cols[1]: "color_desc", cols[2]: "talle",
-            cols[3]: "fecha", cols[4]: "cantidad_str",
-            cols[5]: "total_str" if len(cols) > 5 else "extra"
-        })
+        ncols = len(cols)
+
+        # Detectar estructura: buscar columna que contenga "Mes" (fecha)
+        # para determinar donde arranca la data
+        fecha_idx = None
+        for i, c in enumerate(cols):
+            c_upper = str(c).upper().strip()
+            if "MES" in c_upper or "PERIODO" in c_upper or "FECHA" in c_upper:
+                fecha_idx = i
+                break
+
+        if fecha_idx is not None and fecha_idx >= 3:
+            # Columnas antes de fecha: las ultimas 3 antes de fecha son articulo, color, talle
+            art_idx = fecha_idx - 3
+            col_map = {cols[art_idx]: "articulo", cols[art_idx + 1]: "color_desc",
+                       cols[art_idx + 2]: "talle", cols[fecha_idx]: "fecha"}
+            # Despues de fecha: cantidad, total
+            if ncols > fecha_idx + 1:
+                col_map[cols[fecha_idx + 1]] = "cantidad_str"
+            if ncols > fecha_idx + 2:
+                col_map[cols[fecha_idx + 2]] = "total_str"
+        else:
+            # Fallback: buscar por contenido - la columna con valores tipo "Mes XX" es fecha
+            fecha_idx_by_content = None
+            for i in range(ncols):
+                sample = tmp.iloc[:5, i].astype(str).str.strip()
+                if sample.str.contains(r"[Mm]es\s+\d", regex=True).any():
+                    fecha_idx_by_content = i
+                    break
+
+            if fecha_idx_by_content is not None and fecha_idx_by_content >= 3:
+                fi = fecha_idx_by_content
+                art_idx = fi - 3
+                col_map = {cols[art_idx]: "articulo", cols[art_idx + 1]: "color_desc",
+                           cols[art_idx + 2]: "talle", cols[fi]: "fecha"}
+                if ncols > fi + 1:
+                    col_map[cols[fi + 1]] = "cantidad_str"
+                if ncols > fi + 2:
+                    col_map[cols[fi + 2]] = "total_str"
+            else:
+                # Fallback original por posicion
+                col_map = {cols[0]: "articulo", cols[1]: "color_desc", cols[2]: "talle",
+                           cols[3]: "fecha"}
+                if ncols > 4:
+                    col_map[cols[4]] = "cantidad_str"
+                if ncols > 5:
+                    col_map[cols[5]] = "total_str"
+
+        tmp = tmp.rename(columns=col_map)
         frames.append(tmp)
 
     if not frames:
@@ -819,6 +862,9 @@ def main():
 
         st.sidebar.success(f"✅ Minimos: {len(df_min):,} SKUs")
         st.sidebar.success(f"✅ Ventas: {len(df_vta):,} registros")
+        with st.sidebar.expander("Debug: columnas ventas"):
+            st.write(list(df_vta.columns))
+            st.write(df_vta.head(3))
 
         try:
             results = run_analysis(df_min, df_vta, params)

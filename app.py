@@ -233,7 +233,15 @@ def load_minimos(file_bytes):
 
     return df
 
-@st.cache_data
+def _find_col(cols, keywords):
+    """Busca indice de columna que contenga alguna keyword en su nombre."""
+    for i, c in enumerate(cols):
+        c_up = str(c).upper().strip()
+        for kw in keywords:
+            if kw in c_up:
+                return i
+    return None
+
 def load_ventas(file_bytes):
     xls = pd.ExcelFile(BytesIO(file_bytes), engine="xlrd")
     frames = []
@@ -245,51 +253,57 @@ def load_ventas(file_bytes):
         cols = list(tmp.columns)
         ncols = len(cols)
 
-        # Detectar estructura: buscar columna que contenga "Mes" (fecha)
-        # para determinar donde arranca la data
-        fecha_idx = None
-        for i, c in enumerate(cols):
-            c_upper = str(c).upper().strip()
-            if "MES" in c_upper or "PERIODO" in c_upper or "FECHA" in c_upper:
-                fecha_idx = i
-                break
+        # Buscar columnas por nombre de header
+        fecha_idx = _find_col(cols, ["FECHA", "MES", "PERIODO"])
+        cant_idx = _find_col(cols, ["CANTIDAD"])
+        total_idx = _find_col(cols, ["TOTAL", "IMPORTE", "MONTO"])
+        art_idx = _find_col(cols, ["ART"])
+        desc_idx = _find_col(cols, ["DESCRI", "COLOR"])
+        talle_idx = _find_col(cols, ["TALLE"])
 
-        if fecha_idx is not None and fecha_idx >= 3:
-            # Columnas antes de fecha: las ultimas 3 antes de fecha son articulo, color, talle
-            art_idx = fecha_idx - 3
-            col_map = {cols[art_idx]: "articulo", cols[art_idx + 1]: "color_desc",
-                       cols[art_idx + 2]: "talle", cols[fecha_idx]: "fecha"}
-            # Despues de fecha: cantidad, total
+        # Si no encontro fecha por nombre, buscar por contenido "Mes XX"
+        if fecha_idx is None:
+            for i in range(ncols):
+                sample = tmp.iloc[:5, i].astype(str).str.strip()
+                if sample.str.contains(r"[Mm]es\s+\d", regex=True).any():
+                    fecha_idx = i
+                    break
+
+        # Si encontramos las columnas clave por nombre, usarlas
+        if fecha_idx is not None and cant_idx is not None:
+            col_map = {cols[fecha_idx]: "fecha", cols[cant_idx]: "cantidad_str"}
+            if art_idx is not None:
+                col_map[cols[art_idx]] = "articulo"
+            if desc_idx is not None:
+                col_map[cols[desc_idx]] = "color_desc"
+            if talle_idx is not None:
+                col_map[cols[talle_idx]] = "talle"
+            if total_idx is not None:
+                col_map[cols[total_idx]] = "total_str"
+            # Si falta articulo/color/talle, tomar las 3 antes de fecha
+            if art_idx is None and fecha_idx >= 3:
+                col_map[cols[fecha_idx - 3]] = "articulo"
+            if desc_idx is None and fecha_idx >= 2:
+                col_map[cols[fecha_idx - 2]] = "color_desc"
+            if talle_idx is None and fecha_idx >= 1:
+                col_map[cols[fecha_idx - 1]] = "talle"
+        elif fecha_idx is not None and fecha_idx >= 3:
+            # Tiene fecha pero no encontro cantidad por nombre -> posicion relativa
+            art_idx_f = fecha_idx - 3
+            col_map = {cols[art_idx_f]: "articulo", cols[art_idx_f + 1]: "color_desc",
+                       cols[art_idx_f + 2]: "talle", cols[fecha_idx]: "fecha"}
             if ncols > fecha_idx + 1:
                 col_map[cols[fecha_idx + 1]] = "cantidad_str"
             if ncols > fecha_idx + 2:
                 col_map[cols[fecha_idx + 2]] = "total_str"
         else:
-            # Fallback: buscar por contenido - la columna con valores tipo "Mes XX" es fecha
-            fecha_idx_by_content = None
-            for i in range(ncols):
-                sample = tmp.iloc[:5, i].astype(str).str.strip()
-                if sample.str.contains(r"[Mm]es\s+\d", regex=True).any():
-                    fecha_idx_by_content = i
-                    break
-
-            if fecha_idx_by_content is not None and fecha_idx_by_content >= 3:
-                fi = fecha_idx_by_content
-                art_idx = fi - 3
-                col_map = {cols[art_idx]: "articulo", cols[art_idx + 1]: "color_desc",
-                           cols[art_idx + 2]: "talle", cols[fi]: "fecha"}
-                if ncols > fi + 1:
-                    col_map[cols[fi + 1]] = "cantidad_str"
-                if ncols > fi + 2:
-                    col_map[cols[fi + 2]] = "total_str"
-            else:
-                # Fallback original por posicion
-                col_map = {cols[0]: "articulo", cols[1]: "color_desc", cols[2]: "talle",
-                           cols[3]: "fecha"}
-                if ncols > 4:
-                    col_map[cols[4]] = "cantidad_str"
-                if ncols > 5:
-                    col_map[cols[5]] = "total_str"
+            # Fallback original por posicion
+            col_map = {cols[0]: "articulo", cols[1]: "color_desc", cols[2]: "talle",
+                       cols[3]: "fecha"}
+            if ncols > 4:
+                col_map[cols[4]] = "cantidad_str"
+            if ncols > 5:
+                col_map[cols[5]] = "total_str"
 
         tmp = tmp.rename(columns=col_map)
         frames.append(tmp)

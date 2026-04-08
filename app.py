@@ -498,6 +498,13 @@ def run_analysis(df_min, df_vta, p):
     uds_faltantes = df[df["delta"] > 0]["delta"].sum()
     vendio_rec = (df["vendio_reciente"] == "SI").sum()
 
+    # Proyeccion a diciembre: del excedente, cuanto se venderia sin devolver
+    df_sobre = df[df["delta"] < 0].copy()
+    excedente_total = abs(df_sobre["delta"].sum())
+    venta_proy_total = df_sobre["venta_proy_dic"].sum()
+    pct_excedente_dic = round(venta_proy_total / excedente_total * 100, 1) if excedente_total > 0 else 0
+    excedente_restante = max(excedente_total - venta_proy_total, 0)
+
     results["summary"] = {
         "total": total,
         "sobre": sobre_total,
@@ -515,6 +522,10 @@ def run_analysis(df_min, df_vta, p):
         "fecha_desde": fecha_corte.strftime("%Y-%m"),
         "fecha_hasta": fecha_max.strftime("%Y-%m"),
         "total_meses": total_meses,
+        "excedente_total": excedente_total,
+        "venta_proy_dic": venta_proy_total,
+        "pct_excedente_dic": pct_excedente_dic,
+        "excedente_restante": excedente_restante,
     }
 
     results["df_detail"] = df
@@ -547,6 +558,14 @@ def render_summary(r):
     c2.metric("Uds Faltantes", f"{s['uds_faltantes']:,.0f}")
     c3.metric("Vendio Ult. Meses", f"{s['vendio_reciente']:,}")
     c4.metric("Falta Muestra", f"{s['falta_muestra']:,}")
+
+    st.markdown("---")
+    st.markdown("#### Proyeccion a Diciembre 2026 (sin devolver, solo bajar minimos)")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Excedente Total", f"{s['excedente_total']:,.0f} uds")
+    c2.metric("Se venderia a Dic", f"{s['venta_proy_dic']:,.0f} uds")
+    c3.metric("% Excedente cubierto", f"{s['pct_excedente_dic']:.1f}%")
+    c4.metric("Quedaria sin vender", f"{s['excedente_restante']:,.0f} uds")
 
     st.markdown("---")
     c1, c2 = st.columns(2)
